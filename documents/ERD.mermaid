@@ -1,0 +1,194 @@
+erDiagram
+
+    %% ===================== PUBLIC FRONTEND SIDE =====================
+    %% Business owners never touch RBAC — flat, fixed permission set.
+
+    BUSINESS_OWNER ||--o{ LEAD : submits
+    BUSINESS_OWNER {
+        int id PK
+        string name
+        string email
+        string password_hash
+        enum status "active | suspended"
+        datetime created_at
+        datetime updated_at
+    }
+
+    %% ===================== CMS / STAFF SIDE (Dynamic RBAC) =====================
+
+    STAFF_USER ||--o{ STAFF_USER_ROLE : has
+    STAFF_USER ||--o{ STAFF_USER_PERMISSION : "direct overrides"
+    STAFF_USER {
+        int id PK
+        string name
+        string email
+        string password_hash
+        enum status "active | suspended"
+        datetime last_login_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    ROLE ||--o{ STAFF_USER_ROLE : "assigned to"
+    ROLE ||--o{ ROLE_PERMISSION : has
+    ROLE {
+        int id PK
+        string name "e.g. Agent, Admin, Content Editor"
+        string description
+        boolean is_system "true for Admin, protects from deletion"
+        datetime created_at
+        datetime updated_at
+    }
+
+    PERMISSION ||--o{ ROLE_PERMISSION : "granted via"
+    PERMISSION ||--o{ STAFF_USER_PERMISSION : "granted directly"
+    PERMISSION {
+        int id PK
+        string key "e.g. lead.view, lead.edit, client.archive, page.publish, role.manage"
+        string module "Lead | Client | Page | Template | Taxonomy | RBAC | Reporting"
+        string description
+    }
+
+    STAFF_USER_ROLE {
+        int id PK
+        int staff_user_id FK
+        int role_id FK
+        datetime assigned_at
+    }
+
+    ROLE_PERMISSION {
+        int id PK
+        int role_id FK
+        int permission_id FK
+    }
+
+    STAFF_USER_PERMISSION {
+        int id PK
+        int staff_user_id FK
+        int permission_id FK
+        enum effect "grant | revoke"
+    }
+
+    %% ===================== LEAD / CLIENT / PAGE DOMAIN =====================
+
+    LEAD ||--o| CLIENT : "converts to"
+    LEAD }o--|| NICHE : has
+    LEAD }o--|| AREA : has
+    LEAD }o--o| STAFF_USER : "assigned to"
+    LEAD {
+        int id PK
+        int submitted_by FK "BusinessOwner.id"
+        string business_name
+        int niche_id FK
+        int area_id FK
+        string phone
+        string email
+        text description
+        enum status "new | calling | no_answer | follow_up | booked | not_interested | converted"
+        enum source "organic_signup | referral | ad_campaign | manual_entry"
+        int assigned_agent_id FK "StaffUser.id"
+        int converted_client_id FK "Client.id, nullable"
+        boolean is_deleted
+        datetime created_at
+        datetime updated_at
+    }
+
+    LEAD ||--o{ LEAD_NOTE : has
+    LEAD_NOTE {
+        int id PK
+        int lead_id FK
+        int author_id FK "StaffUser.id"
+        text note
+        datetime created_at
+    }
+
+    CLIENT }o--|| NICHE : has
+    CLIENT ||--o{ PAGE : owns
+    CLIENT }o--o| STAFF_USER : "assigned to"
+    CLIENT {
+        int id PK
+        string business_name
+        int niche_id FK
+        string phone
+        string email
+        enum source "manual | lead_conversion"
+        int source_lead_id FK "Lead.id, nullable"
+        int assigned_agent_id FK "StaffUser.id"
+        enum status "active | inactive | archived"
+        boolean is_deleted
+        datetime created_at
+        datetime updated_at
+    }
+
+    PAGE }o--|| TEMPLATE : uses
+    PAGE }o--|| NICHE : "service under"
+    PAGE }o--|| AREA : "targets"
+    PAGE ||--o{ PAGE_CONTENT : has
+    PAGE }o--o| STAFF_USER : "published by"
+    PAGE {
+        int id PK "used in URL, e.g. 102931"
+        int client_id FK
+        int template_id FK
+        string service_name
+        int area_id FK
+        string slug "seo slug, e.g. asphalt-shingle-service-in-toronto"
+        enum status "draft | pending_review | published | archived"
+        string meta_title
+        string meta_description
+        int og_image_id FK "Media.id, nullable"
+        int published_by FK "StaffUser.id, nullable"
+        datetime published_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    TEMPLATE ||--o{ PAGE : "used by"
+    TEMPLATE {
+        int id PK
+        string name
+        text field_schema "JSON: defines required structured fields"
+        enum status "active | deprecated"
+        datetime created_at
+    }
+
+    PAGE_CONTENT }o--|| MEDIA : "may reference"
+    PAGE_CONTENT {
+        int id PK
+        int page_id FK
+        string field_key "matches Template.field_schema key"
+        text field_value
+        int media_id FK "Media.id, nullable, for image fields"
+    }
+
+    MEDIA {
+        int id PK
+        string url
+        string type "image | logo | icon"
+        int uploaded_by FK "StaffUser.id"
+        datetime created_at
+    }
+
+    NICHE {
+        int id PK
+        string name "e.g. Roofing, Plumbing"
+    }
+
+    AREA {
+        int id PK
+        string name "e.g. Toronto, Mississauga"
+        string region
+    }
+
+    %% ===================== AUDIT =====================
+
+    ACTIVITY_LOG {
+        int id PK
+        string entity_type "Lead | Client | Page | Role | Permission | StaffUser"
+        int entity_id
+        string action "created | updated | status_changed | deleted | published | role_assigned | permission_changed"
+        int performed_by FK "StaffUser.id"
+        text meta "JSON: before/after values"
+        datetime created_at
+    }
+
+    STAFF_USER ||--o{ ACTIVITY_LOG : performs
